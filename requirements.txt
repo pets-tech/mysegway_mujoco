@@ -1,0 +1,8 @@
+control
+matplotlib
+mujoco
+numpy
+PyQt5
+pyqtgraph
+zmq
+PyQt6
