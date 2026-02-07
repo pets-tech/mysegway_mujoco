@@ -1,7 +1,9 @@
 ## Segway in mujoco
 
 <!-- ![Image](docs/segway.png) -->
-![Image](docs/segway_side_view.png)
+<!-- ![Image](docs/segway_side_view.png) -->
+![Image](docs/segway_standup.gif)
+
 
 
 ## Install
@@ -10,6 +12,10 @@
 python3 -m venv ./venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+sudo apt-get install libzmq3-dev
+g++ controllers/lqr_controller_stab.cpp -o lqr_controller_stab -lzmq -O2
+
 ```
 
 ## Run
