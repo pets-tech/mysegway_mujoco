@@ -5,41 +5,24 @@ np.set_printoptions(precision=5)
 
 g = 9.81
 
-######mujoco real segway
+"""
+Model parameters (for mujoco segway.xml)
+""" 
+
 # wheel
 m_wheel = 1.8
 r_wheel = 0.17 / 2.0
-r_wheel_stator = 0.111 / 2.0
-J_wheel = 0.5 * m_wheel * (r_wheel_stator**2 + r_wheel**2)
+J_wheel = 0.5 * m_wheel * r_wheel**2
 
 # body
-m_body = 22.0 - 2.0 * m_wheel   # 18.4
-com_body = 0.426    # (10 - 2 * m_wheel) * x = 10 * (0.7 - x),
+m_body = 1.0
+com_body = 0.426
 J_body = m_body * com_body**2 / 12.0
 
+"""
+Linear model in form E qdd + F qd + G q = H u
+"""
 
-# # wheel
-# m_wheel = 2*3.75*0.6
-# r_wheel = 0.173 / 2
-# J_wheel = 2*3.75*0.6*0.065**2
-
-# # body
-# m_body = 16.0
-# com_body = 0.40
-# J_body = 1.22
-
-# m_wheel=2*3.75*0.6,      # kg
-# m_body=16.0,      # kg  
-# wheel_radius=0.173/2, # m
-# body_com_length=0.40,#0.51,  # m
-# I_wheel=2*3.75*0.6*0.065**2,  # kg·m²
-# I_body_com=1.22,   # kg·m²
-# g=9.81,
-# b_viscous=0.    # N·m·s/rad
-
-
-
-# ode E qdd + F qd + G q = H u
 E = np.array([
     [m_body * com_body * r_wheel,   m_body * com_body**2 + J_body],
     [m_body * r_wheel**2 + 2.0 * m_wheel * r_wheel**2 + 2.0 * J_wheel, m_body * com_body * r_wheel]
@@ -61,6 +44,9 @@ H = np.array([
 ])
 
 
+"""
+Linear model in from xd = Ax + Bu
+"""
 invE = np.linalg.inv(E)
 
 EG = invE @ G
@@ -93,13 +79,29 @@ print(B)
 c_matrix = np.hstack((B,A@B,A@A@B, A@A@A@B))
 o_matrix = np.vstack((C,C@A,C@A@A, C@A@A@A))
 
-# print(np.linalg.matrix_rank(c_matrix))
-# print(np.linalg.matrix_rank(o_matrix))
+print(np.linalg.matrix_rank(c_matrix))
+print(np.linalg.matrix_rank(o_matrix))
 
-#########################
-##### modal control
-time = 1.4
-w0 = 7.8 / time
+"""
+Discretize linear ss model
+"""
+sys = ct.ss(A, B, C, D)
+
+dt = 0.002
+sys_d = ct.c2d(sys, dt)
+
+Ad = sys_d.A
+Bd = sys_d.B
+print(np.array2string(Ad, separator=", "))
+print(np.array2string(Bd, separator=", "))
+
+
+"""
+State feeadback design
+"""
+
+# 1. modal control using akerman fomula (Miroshnik I.V.)
+time = 1.4; w0 = 7.8 / time
 roots = [-w0] * 4
 coeffs = np.poly(roots)
 
@@ -110,21 +112,29 @@ A4 = A3 @ A
 akp = A4 + coeffs[1] * A3 + coeffs[2] * A2 + coeffs[3] * A + coeffs[4] * I
 
 K1 = np.array([np.array([0, 0, 0, 1]) @ np.linalg.inv(c_matrix) @ akp])
-print(np.array2string(K1.flatten(),separator=', '))
+print("Kmodal", np.array2string(K1.flatten(), separator=', '))
 
-#########################
-##### lqr control [theta, psi, dtheta, dpsi]
-Q = np.diag([20,100,1,1])
-R = 10
+## butterborth
+coeffs = [1, 2.61*w0, 3.41*w0**2, 2.61*w0**3, w0**4]
+poles = np.roots(coeffs)
+K1_b = np.array([ct.place_acker(A, B, poles)])
+
+## newton
+coeffs = [1, 4*w0, 6*w0**2, 4*w0**3, w0**4]
+poles = np.roots(coeffs)
+K1_n = np.array([ct.place_acker(A, B, poles)])
+
+# 2. lqr
+Q = np.diag([50,100,1,1]); R = 10
 K2, S, E = ct.lqr(A, B, Q, R)
-print(np.array2string(K2.flatten(), separator=', '))
+print("Klqr", np.array2string(K2.flatten(), separator=", "))
 
 
 # test: modal VS lqr
 sys = ct.ss(A, B, C, D)
 
 t = np.linspace(0, 5, 500)
-x0 = np.array([0.2, 0, 0, 0])
+x0 = np.array([0.7, 0, 0, 0])
 
 sys_cl_modal = ct.ss(A - B @ K1, B, C, D)
 t_out_m, y_out_m = ct.initial_response(sys_cl_modal, t, x0)
@@ -132,20 +142,30 @@ t_out_m, y_out_m = ct.initial_response(sys_cl_modal, t, x0)
 sys_cl_lqr = ct.ss(A - B @ K2, B, C, D)
 t_out_lqr, y_out_lqr = ct.initial_response(sys_cl_lqr, t, x0)
 
+# sys_cl_akr = ct.ss(A - B @ K1_b, B, C, D)
+sys_cl_akr = ct.ss(A - B @ K1_b, B, C, D)
+t_out_ark, y_out_ark = ct.initial_response(sys_cl_akr, t, x0)
+
+
+
+"""
+Plot modal control vs lqr
+"""
 
 fig, axes = plt.subplots(5, 1, figsize=(10, 12))
 for ax in axes: ax.grid(True)
 
-axes[0].plot(t_out_m, y_out_m[0], t_out_lqr, y_out_lqr[0])
-axes[0].set_ylabel('psi'); 
+axes[0].plot(t_out_m, y_out_m[0], t_out_lqr, y_out_lqr[0], t_out_ark, y_out_ark[0])
+axes[0].set_ylabel('psi')
+axes[0].legend(["modal", "lqr", "ark"])
 
-axes[1].plot(t_out_m, y_out_m[2], t_out_lqr, y_out_lqr[2])
+axes[1].plot(t_out_m, y_out_m[2], t_out_lqr, y_out_lqr[2], t_out_ark, y_out_ark[2])
 axes[1].set_ylabel('dpsi')
 
-axes[2].plot(t_out_m, y_out_m[3], t_out_lqr, y_out_lqr[3])
+axes[2].plot(t_out_m, y_out_m[3], t_out_lqr, y_out_lqr[3], t_out_ark, y_out_ark[3])
 axes[2].set_ylabel('theta')
 
-axes[3].plot(t_out_m, y_out_m[1], t_out_lqr, y_out_lqr[1])
+axes[3].plot(t_out_m, y_out_m[1], t_out_lqr, y_out_lqr[1], t_out_ark, y_out_ark[1])
 axes[3].set_ylabel('dtheta')
 
 u_m = np.zeros(len(t_out_m))

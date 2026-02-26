@@ -14,21 +14,37 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 sudo apt-get install libzmq3-dev
-g++ controllers/lqr_controller_stab.cpp -o lqr_controller_stab -lzmq -O2
 
 ```
 
 ## Run
 
-To compute K vector (modal control and lqr)
+To compute gains (K vector) (modal control and/or lqr)
 ```bash
 python model.py
 ```
 
-To simulate with mujoco
+To simulate with mujoco (with system state vizualizetion)
 ```bash
-python simulate.py & python rt-plotter.py
+python simulator.py & python rt-plotter.py
 ```
+
+Examples of controllers:
+
+1. LQR with standup
+
+    - C++
+
+    ```
+    g++ controllers/lqr_controller_with_standup.cpp -o controllers/lqr_controller_with_standup -lzmq -O3
+    ./controllers/lqr_controller_with_standup
+    ```
+
+    - Python
+
+    ```
+    python controllers/lqr_controller_with_standup.py
+    ```
 
 ![Image](docs/work.png)
 
