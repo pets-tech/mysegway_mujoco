@@ -1,9 +1,15 @@
-## Segway in mujoco
+This is a clean single file implementations of control algorithms (modal  control, LQR, MPC).
 
 <!-- ![Image](docs/segway.png) -->
 <!-- ![Image](docs/segway_side_view.png) -->
 ![Image](docs/segway_standup.gif)
 
+
+> [!IMPORTANT]
+> All controllers are avaliable for hot-plug for segway only now.
+
+> [!IMPORTANT]
+> simulator <-> ZMQ <-> controller
 
 
 ## Install
