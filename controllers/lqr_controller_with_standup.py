@@ -43,7 +43,7 @@ def main():
                 sign = int(math.copysign(1, psi))
                 u = sign * 8.0
 
-        msg = struct.pack("df", t, u)
+        msg = struct.pack("dff", t, u, u)
         sock_u.send(msg, zmq.NOBLOCK)
 
 

@@ -29,7 +29,7 @@ m = mujoco.MjModel.from_xml_path(MODEL)
 d = mujoco.MjData(m)
 
 
-with mujoco.viewer.launch_passive(m, d, show_left_ui=False, show_right_ui=False) as viewer:
+with mujoco.viewer.launch_passive(m, d, show_left_ui=True, show_right_ui=False) as viewer:
     
     viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
     viewer.cam.fixedcamid = m.camera("side_cam").id
@@ -37,7 +37,8 @@ with mujoco.viewer.launch_passive(m, d, show_left_ui=False, show_right_ui=False)
     psi = 0.0
     prev_psi = 0
     prev_time = time.time()
-    u = 0.0
+    u_left = 0.0
+    u_right = 0.0
     
     print("Running...")
     start = time.time()
@@ -66,14 +67,16 @@ with mujoco.viewer.launch_passive(m, d, show_left_ui=False, show_right_ui=False)
         t_u = -1
         try:
             msg = sock_u.recv(zmq.NOBLOCK)
-            t_u, u = struct.unpack("df", msg)
+            t_u, u_left, u_right = struct.unpack("dff", msg)
         except zmq.Again:
-            u = 0.0
+            u_left = 0.0
+            u_right = 0.0
         except:
-            u = 0.0
+            u_left = 0.0
+            u_right = 0.0
         
-        d.ctrl[0] = u
-        d.ctrl[1] = u
+        d.ctrl[0] = u_left
+        d.ctrl[1] = u_right
 
         mujoco.mj_step(m, d)
 

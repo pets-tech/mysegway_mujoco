@@ -29,7 +29,8 @@ struct StateMsg {
 #pragma pack(push, 1)
 struct ControlMsg {
     double t;
-    float u;
+    float u_left;
+    float u_right;
 };
 #pragma pack(pop)
 
@@ -48,7 +49,7 @@ int main() {
     printf("LQR controller started\n");
     int i = 0;
     float u = 0.0;
-    
+
     while (true) {
 
         StateMsg s;
@@ -79,7 +80,8 @@ int main() {
 
         ControlMsg c;
         c.t = s.t;
-        c.u = u;
+        c.u_left = u;
+        c.u_right = u;
 
         zmq_send(pub, &c, sizeof(c), ZMQ_DONTWAIT);
     }

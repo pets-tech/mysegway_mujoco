@@ -1,5 +1,6 @@
 import control as ct
 import matplotlib.pyplot as plt
+import scipy
 import numpy as np
 np.set_printoptions(precision=5)
 
@@ -87,20 +88,62 @@ Discretize linear ss model
 """
 sys = ct.ss(A, B, C, D)
 
-dt = 0.002
+
+# print(np.linalg.eigvals(A))
+dt = 0.005
 sys_d = ct.c2d(sys, dt)
 
 Ad = sys_d.A
 Bd = sys_d.B
 print(np.array2string(Ad, separator=", "))
 print(np.array2string(Bd, separator=", "))
-
+print(np.linalg.eigvals(Ad))
 
 """
 State feeadback design
 """
 
-# 1. modal control using akerman fomula (Miroshnik I.V.)
+"MPC (without constraints)"
+Q = np.diag([50, 100, 1, 1])
+R = np.array([[10]])
+
+N = 200
+n_x = Ad.shape[0]
+n_u = Bd.shape[1]
+
+barQ = scipy.linalg.block_diag(*[Q]*N)
+barR = scipy.linalg.block_diag(*[R]*N)
+
+Phi = np.vstack([np.linalg.matrix_power(Ad, i+1) for i in range(N)])
+
+Psi = np.zeros((N*n_x, N*n_u))
+for i in range(N):
+    for j in range(N):
+        if i >= j:
+            power = i - j
+            if power == 0:
+                Psi[i*n_x:(i+1)*n_x, j*n_u:(j+1)*n_u] = Bd
+            else:
+                Psi[i*n_x:(i+1)*n_x, j*n_u:(j+1)*n_u] = np.linalg.matrix_power(Ad, power) @ Bd
+
+H = Psi.T @ barQ @ Psi + barR
+F = Psi.T @ barQ @ Phi
+Kmpc_full = np.linalg.solve(H, F)
+
+Kmpc = Kmpc_full[0:n_u, :]
+print("Kmpc", np.array2string(Kmpc.flatten(), separator=", "))
+from scipy.linalg import solve_discrete_are
+P = solve_discrete_are(Ad, Bd, Q, R)
+print("P", np.array2string(P.flatten(), separator=", "))
+
+
+"LQR"
+# Klqr, S, E = ct.lqr(A, B, Q, R)
+Klqr, _, _ = ct.dlqr(Ad, Bd, Q, R)
+print("Klqr", np.array2string(Klqr.flatten(), separator=", "))
+
+
+"Modal control"
 time = 1.4; w0 = 7.8 / time
 roots = [-w0] * 4
 coeffs = np.poly(roots)
@@ -111,40 +154,35 @@ A3 = A2 @ A
 A4 = A3 @ A
 akp = A4 + coeffs[1] * A3 + coeffs[2] * A2 + coeffs[3] * A + coeffs[4] * I
 
-K1 = np.array([np.array([0, 0, 0, 1]) @ np.linalg.inv(c_matrix) @ akp])
-print("Kmodal", np.array2string(K1.flatten(), separator=', '))
+Kmodal = np.array([np.array([0, 0, 0, 1]) @ np.linalg.inv(c_matrix) @ akp])
+print("Kmodal", np.array2string(Kmodal.flatten(), separator=', '))
 
-## butterborth
-coeffs = [1, 2.61*w0, 3.41*w0**2, 2.61*w0**3, w0**4]
-poles = np.roots(coeffs)
-K1_b = np.array([ct.place_acker(A, B, poles)])
+# ## butterborth
+# coeffs = [1, 2.61*w0, 3.41*w0**2, 2.61*w0**3, w0**4]
+# poles = np.roots(coeffs)
+# K1_b = np.array([ct.place_acker(A, B, poles)])
 
-## newton
-coeffs = [1, 4*w0, 6*w0**2, 4*w0**3, w0**4]
-poles = np.roots(coeffs)
-K1_n = np.array([ct.place_acker(A, B, poles)])
-
-# 2. lqr
-Q = np.diag([50,100,1,1]); R = 10
-K2, S, E = ct.lqr(A, B, Q, R)
-print("Klqr", np.array2string(K2.flatten(), separator=", "))
+# ## newton
+# coeffs = [1, 4*w0, 6*w0**2, 4*w0**3, w0**4]
+# poles = np.roots(coeffs)
+# K1_n = np.array([ct.place_acker(A, B, poles)])
 
 
-# test: modal VS lqr
+"tests"
+
 sys = ct.ss(A, B, C, D)
 
 t = np.linspace(0, 5, 500)
 x0 = np.array([0.7, 0, 0, 0])
 
-sys_cl_modal = ct.ss(A - B @ K1, B, C, D)
+sys_cl_modal = ct.ss(A - B @ Kmodal, B, C, D)
 t_out_m, y_out_m = ct.initial_response(sys_cl_modal, t, x0)
 
-sys_cl_lqr = ct.ss(A - B @ K2, B, C, D)
+sys_cl_lqr = ct.ss(A - B @ Klqr, B, C, D)
 t_out_lqr, y_out_lqr = ct.initial_response(sys_cl_lqr, t, x0)
 
-# sys_cl_akr = ct.ss(A - B @ K1_b, B, C, D)
-sys_cl_akr = ct.ss(A - B @ K1_b, B, C, D)
-t_out_ark, y_out_ark = ct.initial_response(sys_cl_akr, t, x0)
+sys_cl_mpc = ct.ss(A - B @ Kmpc, B, C, D)
+t_out_mpc, y_out_mpc = ct.initial_response(sys_cl_mpc, t, x0)
 
 
 
@@ -155,29 +193,34 @@ Plot modal control vs lqr
 fig, axes = plt.subplots(5, 1, figsize=(10, 12))
 for ax in axes: ax.grid(True)
 
-axes[0].plot(t_out_m, y_out_m[0], t_out_lqr, y_out_lqr[0], t_out_ark, y_out_ark[0])
+axes[0].plot(t_out_m, y_out_m[0], t_out_lqr, y_out_lqr[0], t_out_mpc, y_out_mpc[0])
 axes[0].set_ylabel('psi')
-axes[0].legend(["modal", "lqr", "ark"])
+axes[0].legend(["modal", "lqr", "mpc"])
 
-axes[1].plot(t_out_m, y_out_m[2], t_out_lqr, y_out_lqr[2], t_out_ark, y_out_ark[2])
+axes[1].plot(t_out_m, y_out_m[2], t_out_lqr, y_out_lqr[2], t_out_mpc, y_out_mpc[2])
 axes[1].set_ylabel('dpsi')
 
-axes[2].plot(t_out_m, y_out_m[3], t_out_lqr, y_out_lqr[3], t_out_ark, y_out_ark[3])
+axes[2].plot(t_out_m, y_out_m[3], t_out_lqr, y_out_lqr[3], t_out_mpc, y_out_mpc[3])
 axes[2].set_ylabel('theta')
 
-axes[3].plot(t_out_m, y_out_m[1], t_out_lqr, y_out_lqr[1], t_out_ark, y_out_ark[1])
+axes[3].plot(t_out_m, y_out_m[1], t_out_lqr, y_out_lqr[1], t_out_mpc, y_out_mpc[1])
 axes[3].set_ylabel('dtheta')
 
 u_m = np.zeros(len(t_out_m))
 u_lqr = np.zeros(len(t_out_m))
+u_mpc = np.zeros(len(t_out_m))
 for i in range(len(t_out_m)):
     x = y_out_m[:, i].flatten() 
-    u_m[i] = -K1.flatten() @ x
+    u_m[i] = -Kmodal.flatten() @ x
 
     x = y_out_lqr[:, i].flatten() 
-    u_lqr[i] = -K2.flatten() @ x
+    u_lqr[i] = -Klqr.flatten() @ x
 
-axes[4].plot(t_out_m, u_m, t_out_lqr, u_lqr)
+    x = y_out_lqr[:, i].flatten() 
+    u_mpc[i] = -Kmpc.flatten() @ x
+
+
+axes[4].plot(t_out_m, u_m, t_out_lqr, u_lqr, t_out_mpc, u_mpc)
 axes[4].set_ylabel('u')
 
 plt.tight_layout()
